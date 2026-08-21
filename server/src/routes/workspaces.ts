@@ -165,7 +165,7 @@ router.post('/join', authenticate, async (req: AuthRequest, res: Response) => {
          AND (phone IN (SELECT phone FROM users WHERE id = ?) OR email IN (SELECT email FROM users WHERE id = ?))`,
       [req.userId, invite.workspace_id, req.userId, req.userId]
     );
-    invalidateUserScope(req.userId);
+    invalidateUserScope(req.userId!);
 
     res.json({
       workspace: { id: ws.id, name: ws.name, slug: ws.slug },
