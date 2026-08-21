@@ -1,0 +1,3151 @@
+openapi: 3.0.0
+info:
+  title: Communicator API 2026
+  description: >
+    API REST + WebSocket para sistema de mensajería instantánea y
+    llamadas peer-to-peer (WebRTC). Soporta chat 1-a-1, grupos,
+    presencia en línea, y señalización de llamadas de voz/video.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+    description: Servidor Local de Desarrollo (ADB reverse)
+  - url: http://192.168.XX.XX:3000
+    description: Red WiFi local (reemplazar XX.XX con IP del servidor)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenido en /api/auth/login o /api/auth/register
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Credenciales inválidas
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              msg:
+                type: string
+              path:
+                type: string
+              location:
+                type: string
+
+    Pagination:
+      type: object
+      properties:
+        offset:
+          type: integer
+          default: 0
+          description: Desplazamiento para paginación
+        limit:
+          type: integer
+          default: 50
+          maximum: 100
+          description: Máximo de registros por página
+
+    User:
+      type: object
+      required: [id, username, email, avatar_url, is_online, last_seen, tenant_id, active_workspace_id, is_suspended]
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          pattern: '^[a-zA-Z0-9_]+$'
+          example: juan_perez
+        email:
+          type: string
+          format: email
+          example: juan@example.com
+        avatar_url:
+          type: string
+          nullable: true
+          example: null
+        is_online:
+          type: boolean
+          example: true
+        last_seen:
+          type: string
+          format: date-time
+          nullable: true
+        tenant_id:
+          type: integer
+          nullable: true
+          description: ID del tenant al que pertenece (alias de compat; hoy = workspace_id)
+          example: 1
+        active_workspace_id:
+          type: integer
+          nullable: true
+          description: Workspace activo del usuario (seleccionado)
+          example: 2
+        workspace_ids:
+          type: array
+          nullable: true
+          description: IDs de todos los workspaces a los que pertenece el usuario
+          items:
+            type: integer
+          example: [2, 5]
+        is_suspended:
+          type: boolean
+          description: Si la cuenta está suspendida (login bloqueado)
+          example: false
+
+    Tenant:
+      type: object
+      required: [id, name, slug, max_seats, is_active, created_at]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Zapata Dev
+        slug:
+          type: string
+          example: zapata-dev
+        max_seats:
+          type: integer
+          example: 1000
+        is_active:
+          type: boolean
+          example: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Fecha de soft-delete (null = activo). Los workspaces con deleted_at no aparecen en listados
+          example: null
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: integer
+          nullable: true
+          description: User ID del creador del workspace (no puede ser removido)
+        used_seats:
+          type: integer
+          description: Número de usuarios activos (solo en respuestas list/me)
+          example: 6
+        online_count:
+          type: integer
+          description: Número de usuarios online (solo en /me)
+          example: 3
+        role:
+          type: string
+          enum: [admin, member]
+          description: Rol del usuario actual en este workspace (solo en list)
+          example: admin
+        invited_by:
+          type: integer
+          nullable: true
+          description: User ID de quién invitó al usuario actual a este workspace (null si es propio, solo en list)
+          example: 5
+        invited_by_username:
+          type: string
+          nullable: true
+          description: Username de quién invitó al usuario actual (null si es propio, solo en list)
+          example: carlos
+        is_owner:
+          type: boolean
+          description: true si el usuario actual es el creador del workspace (solo en list)
+          example: true
+
+    TenantInput:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: ACME Corp
+        slug:
+          type: string
+          maxLength: 50
+          pattern: '^[a-z0-9-]+$'
+          description: Minúsculas, números y guiones. Único.
+          example: acme-corp
+        maxSeats:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          default: 50
+          example: 50
+        firstAdminEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Email del primer admin del tenant (opcional, para envío de invitación)
+
+    InvitationCode:
+      type: object
+      required: [id, code, tenant_id, created_by, max_uses, use_count, is_revoked, created_at]
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+          example: ZAPATADEV-A1B2C3D4
+        tenant_id:
+          type: integer
+        created_by:
+          type: integer
+        used_by:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        used_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        max_uses:
+          type: integer
+          example: 1
+        use_count:
+          type: integer
+          example: 0
+        is_revoked:
+          type: boolean
+          example: false
+
+    InvitationInput:
+      type: object
+      properties:
+        maxUses:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+          description: Cuántas veces se puede usar el código (1 = uso único, N = multi-uso)
+          example: 1
+        expiresInDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          nullable: true
+          description: Vigencia en días (si se omite, no expira)
+          example: 30
+        contactIds:
+          type: array
+          items:
+            type: integer
+          maxItems: 500
+          description: IDs de workspace_contacts a vincular con el código (tracking de quién recibió la invitación)
+          example: [1, 2, 3]
+
+    ContactImport:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          nullable: true
+        email:
+          type: string
+          maxLength: 255
+          nullable: true
+        phone:
+          type: string
+          maxLength: 40
+          nullable: true
+
+    ContactImportInput:
+      type: object
+      required: [contacts]
+      properties:
+        contacts:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ContactImport'
+
+    WorkspaceContact:
+      type: object
+      required: [id, name, email, phone, registeredUserId, invitationId, invitedAt, isMember]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        registeredUserId:
+          type: integer
+          nullable: true
+          description: User ID si el contacto ya está registrado en la app
+        invitationId:
+          type: integer
+          nullable: true
+          description: ID de la invitación (código) enviada a este contacto
+        invitationCode:
+          type: string
+          nullable: true
+        invitedAt:
+          type: string
+          format: date-time
+          nullable: true
+        isMember:
+          type: boolean
+          description: true si registeredUserId ya es miembro del workspace
+
+    ContactsResponse:
+      type: object
+      required: [contacts]
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceContact'
+
+    ContactMatch:
+      type: object
+      required: [name, email, phone, registered, registeredUserId]
+      properties:
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        registered:
+          type: boolean
+          description: true si existe un usuario registrado con ese email
+        registeredUserId:
+          type: integer
+          nullable: true
+
+    ContactMatchResponse:
+      type: object
+      required: [matches]
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContactMatch'
+
+    AdminUser:
+      type: object
+      required: [id, username, email, avatar_url, is_online, last_seen, is_suspended, created_at]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        avatar_url:
+          type: string
+          nullable: true
+        is_online:
+          type: boolean
+        last_seen:
+          type: string
+          format: date-time
+          nullable: true
+        invited_by:
+          type: integer
+          nullable: true
+        invited_by_username:
+          type: string
+          nullable: true
+        invited_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_suspended:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    PushTokenRequest:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+          description: Expo push token (ExponentPushToken[xxxx])
+          example: ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]
+        platform:
+          type: string
+          enum: [ios, android]
+          description: Plataforma del dispositivo
+
+    PushTokenResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: Token registrado exitosamente
+
+    UserBrief:
+      type: object
+      required: [id, username, email, avatar_url, tenant_id, active_workspace_id]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        avatar_url:
+          type: string
+          nullable: true
+        tenant_id:
+          type: integer
+          nullable: true
+          description: ID del tenant al que pertenece (alias de compat; hoy = workspace_id)
+          example: 1
+        active_workspace_id:
+          type: integer
+          nullable: true
+          description: Workspace activo del usuario (seleccionado)
+          example: 2
+        workspace_ids:
+          type: array
+          nullable: true
+          description: IDs de todos los workspaces a los que pertenece el usuario
+          items:
+            type: integer
+          example: [2, 5]
+
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          pattern: '^[a-zA-Z0-9_]+$'
+          description: Solo letras, números y guión bajo
+          example: juan_perez
+        email:
+          type: string
+          format: email
+          example: juan@example.com
+        password:
+          type: string
+          minLength: 6
+          description: Mínimo 6 caracteres
+          example: MiClaveSegura2026
+        invitationCode:
+          type: string
+          minLength: 4
+          maxLength: 64
+          description: |
+            Código de invitación opcional. Si se incluye, el usuario también se une
+            al workspace del código como admin (además de su workspace personal).
+            Formato típico: SLUG-RANDOM (ej: ACME-7XK2P4B9).
+          example: ZAPATADEV-A1B2C3D4
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: juan@example.com
+        password:
+          type: string
+          example: MiClaveSegura2026
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: JWT con expiración de 7 días
+          example: eyJhbGciOiJIUzI1NiIs...
+        user:
+          $ref: '#/components/schemas/UserBrief'
+
+    Message:
+      type: object
+      required: [id, sender_id, receiver_id, group_id, content, message_type, created_at, read_at, reply_to_id]
+      properties:
+        id:
+          type: integer
+          example: 42
+        sender_id:
+          type: integer
+          example: 1
+        receiver_id:
+          type: integer
+          nullable: true
+          example: 2
+        group_id:
+          type: integer
+          nullable: true
+          example: null
+        content:
+          type: string
+          example: Hola, ¿cómo estás?
+        message_type:
+          type: string
+          enum: [text, image, system]
+          default: text
+        created_at:
+          type: string
+          format: date-time
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        sender_name:
+          type: string
+          example: juan_perez
+        sender_avatar:
+          type: string
+          nullable: true
+        group_name:
+          type: string
+          nullable: true
+          description: Nombre del grupo (solo para mensajes grupales)
+        reply_to_id:
+          type: integer
+          nullable: true
+          example: 12
+          description: ID del mensaje al que responde
+        replied_to:
+          type: object
+          nullable: true
+          required: [id, sender_id, sender_name, content, message_type]
+          properties:
+            id:
+              type: integer
+              example: 12
+            sender_id:
+              type: integer
+              example: 1
+            sender_name:
+              type: string
+              example: juan_perez
+            content:
+              type: string
+              example: Mensaje original
+            message_type:
+              type: string
+              enum: [text, image, system]
+          description: Mensaje original al que se responde (incluido cuando reply_to_id no es null)
+
+    Conversation:
+      type: object
+      required: [contact_id, username, avatar_url, is_online, last_message, last_message_at, message_type]
+      properties:
+        contact_id:
+          type: integer
+          example: 2
+        username:
+          type: string
+          example: maria_garcia
+        avatar_url:
+          type: string
+          nullable: true
+        is_online:
+          type: boolean
+          example: true
+        last_message:
+          type: string
+          example: Nos vemos mañana
+        last_message_at:
+          type: string
+          format: date-time
+        message_type:
+          type: string
+          enum: [text, image, system]
+        unread_count:
+          type: integer
+          example: 3
+
+    MessagesResponse:
+      type: object
+      required: [messages, hasMore]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        hasMore:
+          type: boolean
+          description: true si hay más páginas disponibles
+
+    SendMessageRequest:
+      type: object
+      oneOf:
+        - required: [receiverId, content]
+        - required: [groupId, content]
+      properties:
+        receiverId:
+          type: integer
+          description: ID del destinatario (chat 1-a-1)
+        groupId:
+          type: integer
+          description: ID del grupo (chat grupal)
+        content:
+          type: string
+          minLength: 1
+          description: Contenido del mensaje
+        messageType:
+          type: string
+          enum: [text, image, system]
+          default: text
+        replyToId:
+          type: integer
+          nullable: true
+          description: ID del mensaje al que se responde
+
+    Group:
+      type: object
+      required: [id, name, description, avatar_url, created_by, created_at, role]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          maxLength: 100
+          example: Amigos del trabajo
+        description:
+          type: string
+          nullable: true
+          maxLength: 255
+          example: Grupo para coordinar proyectos
+        avatar_url:
+          type: string
+          nullable: true
+        created_by:
+          type: integer
+          example: 1
+        workspace_id:
+          type: integer
+          nullable: true
+          description: Workspace al que pertenece el grupo (los grupos se aislan por workspace activo)
+          example: 2
+        created_at:
+          type: string
+          format: date-time
+        role:
+          type: string
+          enum: [admin, member]
+          description: Rol del usuario autenticado en el grupo
+
+    GroupMember:
+      type: object
+      required: [id, username, avatar_url, is_online, role]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        avatar_url:
+          type: string
+          nullable: true
+        is_online:
+          type: boolean
+        role:
+          type: string
+          enum: [admin, member]
+
+    CreateGroupRequest:
+      type: object
+      required: [name, memberIds]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: Amigos del trabajo
+        description:
+          type: string
+          maxLength: 255
+          example: Grupo para coordinar proyectos
+        memberIds:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+          description: IDs de los miembros a agregar
+
+    CreateGroupResponse:
+      type: object
+      required: [id, name, description]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    LiveKitTokenRequest:
+      type: object
+      required: [room]
+      properties:
+        room:
+          type: string
+          description: Nombre de la sala LiveKit (ej. group-{groupId})
+
+    LiveKitTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token para conectar con LiveKit Cloud
+        room:
+          type: string
+        identity:
+          type: string
+          description: ID del usuario autenticado
+
+    PushTokenInfo:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Token truncado (primeros 30 chars)
+        platform:
+          type: string
+          enum: [ios, android]
+        isValid:
+          type: boolean
+          description: Si el token tiene formato Expo válido
+
+    PushTokensResponse:
+      type: object
+      properties:
+        userId:
+          type: integer
+        count:
+          type: integer
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/PushTokenInfo'
+
+    PushTestRequest:
+      type: object
+      properties:
+        userId:
+          type: integer
+          description: ID del destinatario (opcional, por defecto es el propio usuario)
+        title:
+          type: string
+          description: Título de la notificación
+        body:
+          type: string
+          description: Cuerpo de la notificación
+
+    PushTestResponse:
+      type: object
+      properties:
+        targetUserId:
+          type: integer
+        tokensFound:
+          type: integer
+        tokensAreValid:
+          type: boolean
+        sent:
+          type: integer
+        failed:
+          type: integer
+        details:
+          type: array
+          items:
+            type: string
+        hint:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Token JWT requerido o inválido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: No eres miembro de este grupo
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Solicitud mal formada o datos inválidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+paths:
+  # ══════════════════════════════════════════════
+  # MÓDULO DE AUTENTICACIÓN (rate-limit: 20 req / 15 min)
+  # ══════════════════════════════════════════════
+  /api/auth/register:
+    post:
+      summary: Registrar nuevo usuario
+      description: |
+        Crea un usuario con username, email y password.
+        - Username: 3-50 caracteres alfanuméricos + guión bajo
+        - Email: formato email válido
+        - Password: mínimo 6 caracteres
+        - Email y username deben ser únicos
+      tags: [Autenticación]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Usuario registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Error de validación en campos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '409':
+          description: El email o username ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: El email o usuario ya existe
+        '429':
+          description: Rate limit excedido (20 solicitudes / 15 min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      summary: Iniciar sesión
+      description: |
+        Autentica al usuario con email y password.
+        Devuelve un JWT con expiración de 7 días.
+      tags: [Autenticación]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Inicio de sesión exitoso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit excedido
+
+  /api/auth/me:
+    get:
+      summary: Obtener perfil del usuario autenticado
+      tags: [Autenticación]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Perfil del usuario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════
+  # MÓDULO DE UPLOAD DE IMÁGENES
+  # ══════════════════════════════════════════════
+  /api/upload:
+    post:
+      summary: Subir una imagen (mensajes)
+      description: |
+        Sube una imagen para usar en mensajes de chat.
+        Formatos aceptados: JPG, PNG, GIF, WebP.
+        Tamaño máximo: 10 MB.
+        Devuelve la URL pública de la imagen.
+      tags: [Upload]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Archivo de imagen
+      responses:
+        '200':
+          description: Imagen subida exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    example: /uploads/1712345678_abc123.jpg
+        '400':
+          description: Error de validación o formato no soportado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Imagen demasiado grande (máx. 10 MB)
+
+  /api/users/avatar:
+    post:
+      summary: Subir avatar de perfil
+      description: |
+        Sube una imagen de perfil para el usuario autenticado.
+        Formatos aceptados: JPG, PNG, GIF, WebP.
+        Tamaño máximo: 5 MB.
+        Actualiza el avatar_url del usuario y devuelve la URL pública.
+      tags: [Usuarios]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - avatar
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+                  description: Imagen de perfil (cuadrada recomendada)
+      responses:
+        '200':
+          description: Avatar actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    example: /avatars/avatar_1712345678_abc123.jpg
+        '400':
+          description: Error de validación o formato no soportado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Imagen demasiado grande (máx. 5 MB)
+
+  # ══════════════════════════════════════════════
+  # MÓDULO DE USUARIOS (rate-limit: 100 req / 15 min)
+  # ══════════════════════════════════════════════
+  /api/users/contacts:
+    get:
+      summary: Listar todos los usuarios
+      description: |
+        Devuelve todos los usuarios registrados excepto el autenticado,
+        ordenados alfabéticamente por username.
+      tags: [Usuarios]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de contactos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contacts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users/search:
+    get:
+      summary: Buscar usuarios
+      description: |
+        Busca usuarios por username o email.
+        - Mínimo 2 caracteres de consulta
+        - Máximo 20 resultados
+      tags: [Usuarios]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Término de búsqueda (mín. 2 caracteres)
+          schema:
+            type: string
+            minLength: 2
+      responses:
+        '200':
+          description: Resultados de la búsqueda
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '400':
+          description: Consulta muy corta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users/push-token:
+    put:
+      summary: Registrar token de push notification
+      description: |
+        Registra o actualiza el Expo push token del dispositivo.
+        Si el token ya existe para otro usuario, se reasigna.
+      tags: [Usuarios]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushTokenRequest'
+      responses:
+        '200':
+          description: Token registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushTokenResponse'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════
+  # MÓDULO DE MENSAJES
+  # ══════════════════════════════════════════════
+  /api/messages/conversations:
+    get:
+      summary: Listar conversaciones
+      description: |
+        Devuelve todas las conversaciones 1-a-1 del usuario autenticado
+        con el último mensaje de cada una, ordenadas por fecha descendente.
+      tags: [Mensajes]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de conversaciones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/messages/{userId}:
+    get:
+      summary: Obtener mensajes con un usuario
+      description: |
+        Mensajes entre el usuario autenticado y otro usuario.
+        Paginación por offset (descendente por fecha, entregados en orden ascendente).
+      tags: [Mensajes]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del otro usuario
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Desplazamiento para paginación
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+          description: Máximo de mensajes por página
+      responses:
+        '200':
+          description: Lista de mensajes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════
+  # MÓDULO DE GRUPOS
+  # ══════════════════════════════════════════════
+  /api/groups:
+    post:
+      summary: Crear un grupo
+      description: |
+        Crea un nuevo grupo. El creador se asigna automáticamente como admin.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+      responses:
+        '201':
+          description: Grupo creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateGroupResponse'
+        '400':
+          description: Nombre y miembros requeridos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      summary: Listar grupos del usuario
+      description: Grupos a los que pertenece el usuario autenticado, ordenados alfabéticamente.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de grupos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Group'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/groups/{id}:
+    get:
+      summary: Obtener un grupo por ID
+      description: Devuelve la información de un grupo específico.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Información del grupo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group:
+                    $ref: '#/components/schemas/Group'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Grupo no encontrado
+
+    put:
+      summary: Actualizar nombre/descripción del grupo
+      description: Actualiza el nombre y la descripción del grupo. Solo el administrador puede realizar esta acción.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: Nuevo nombre del grupo
+                description:
+                  type: string
+                  nullable: true
+                  description: Nueva descripción del grupo
+      responses:
+        '200':
+          description: Grupo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateGroupResponse'
+        '400':
+          description: Nombre del grupo obligatorio
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/groups/{id}/members:
+    get:
+      summary: Listar miembros de un grupo
+      description: Devuelve todos los miembros del grupo con su rol y estado online.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del grupo
+      responses:
+        '200':
+          description: Miembros del grupo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupMember'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      summary: Agregar miembros al grupo
+      description: Solo el administrador puede agregar miembros.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del grupo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                memberIds:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+              required:
+                - memberIds
+      responses:
+        '200':
+          description: Miembros agregados exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+                    description: Número de miembros agregados
+        '400':
+          description: Se requiere al menos un miembro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+
+  /api/groups/{id}/members/{userId}:
+    delete:
+      summary: Eliminar un miembro del grupo
+      description: Solo el administrador puede eliminar miembros. No puede eliminarse a sí mismo.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del grupo
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del usuario a eliminar
+      responses:
+        '200':
+          description: Miembro eliminado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Miembro eliminado
+        '400':
+          description: No puedes eliminarte a ti mismo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: El usuario no es miembro del grupo
+
+  /api/groups/{id}/members/me:
+    delete:
+      summary: Salir del grupo
+      description: Cualquier miembro puede salirse del grupo.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del grupo
+      responses:
+        '200':
+          description: Saliste del grupo exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Has salido del grupo
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Grupo no encontrado
+
+  /api/groups/{id}/transfer:
+    post:
+      summary: Transferir propiedad del grupo
+      description: |
+        El creador del grupo transfiere la propiedad a otro miembro.
+        El nuevo propietario obtiene rol admin, el anterior pasa a miembro.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del grupo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: integer
+                  description: ID del nuevo propietario
+      responses:
+        '200':
+          description: Propiedad transferida exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Propiedad transferida exitosamente
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Grupo no encontrado
+
+  /api/groups/{id}/messages:
+    get:
+      summary: Obtener mensajes de un grupo
+      description: |
+        Mensajes del grupo con paginación por offset.
+        Orden descendente por fecha, entregados en orden ascendente.
+      tags: [Grupos]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del grupo
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: Mensajes del grupo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ══════════════════════════════════════════════
+  # MÓDULO DE LLAMADAS (signaling + pending)
+  # ══════════════════════════════════════════════
+  /api/calls/pending:
+    get:
+      summary: Obtener llamada entrante pendiente
+      description: |
+        Devuelve los datos de una llamada entrante si hay una pendiente
+        para el usuario autenticado. Útil cuando la app arranca desde
+        una notificación push de llamada y necesita recuperar el SDP offer.
+      tags: [Llamadas]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Estado de llamada pendiente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasPending:
+                    type: boolean
+                    example: false
+                  callerId:
+                    type: integer
+                  callerUsername:
+                    type: string
+                  callType:
+                    type: string
+                    enum: [voice, video]
+                  offer:
+                    type: object
+                    description: Oferta SDP (solo si hasPending=true)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════
+  # MÓDULO LIVEEKIT (token para llamadas grupales SFU)
+  # ══════════════════════════════════════════════
+  /api/livekit/token:
+    post:
+      summary: Generar token de acceso a LiveKit
+      description: |
+        Genera un JWT firmado para conectarse a una sala de LiveKit Cloud.
+        El token identifica al usuario autenticado y le da permiso para
+        unirse a la sala especificada.
+      tags: [LiveKit]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LiveKitTokenRequest'
+      responses:
+        '200':
+          description: Token generado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveKitTokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════
+  # MÓDULO ADMIN — TENANTS, INVITACIONES, USUARIOS
+  # ══════════════════════════════════════════════
+  # ══════════════════════════════════════════════
+  # MÓDULO DE WORKSPACES (modelo multi-workspace, todos admin)
+  # ══════════════════════════════════════════════
+  /api/workspaces:
+    post:
+      summary: Crear workspace
+      description: |
+        Crea un workspace y asigna al creador como admin. Cualquier usuario
+        autenticado puede crear el suyo (modelo multi-workspace, todos admin).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantInput'
+      responses:
+        '201':
+          description: Workspace creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                  maxSeats:
+                    type: integer
+                  isActive:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: slug o nombre ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Listar mis workspaces
+      description: |
+        Lista los workspaces de los que el usuario es miembro (de workspace_members),
+        con used_seats (cantidad de miembros).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de workspaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/workspaces/join:
+    post:
+      summary: Unirse a un workspace con código
+      description: |
+        Usuario ya autenticado se une a un workspace usando un código de invitación.
+        Lo agrega como admin (todos los miembros lo son) y lo deja como workspace activo.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  description: 'Código de invitación (ej: ACMECORP-7A3F9B2E)'
+      responses:
+        '200':
+          description: Unido al workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      slug:
+                        type: string
+                  alreadyMember:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Código inválido, revocado, agotado, expirado o workspace lleno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workspaces/me:
+    get:
+      summary: Info del workspace activo
+      description: |
+        Devuelve info del workspace activo del usuario autenticado, incluyendo
+        used_seats y online_count.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Información del workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/workspaces/activate/{id}:
+    patch:
+      summary: Cambiar workspace activo
+      description: |
+        Setea active_workspace_id del usuario. Requiere ser miembro del workspace.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Workspace activo cambiado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  activeWorkspaceId:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workspaces/{id}:
+    get:
+      summary: Info de un workspace
+      description: Devuelve info de un workspace (requiere membresía).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Información del workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No tienes acceso a este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Actualizar workspace
+      description: |
+        Un miembro del workspace puede actualizarlo (name, maxSeats).
+        Suspender (isActive) solo lo puede hacer el creador del workspace.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                maxSeats:
+                  type: integer
+                  minimum: 1
+                  maximum: 100000
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Workspace actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  updated:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Soft-delete de un workspace
+      description: |
+        Solo el creador. Oculta el workspace (deleted_at) sin borrar sus datos
+        (chats, grupos, contactos y membresías se conservan). Los miembros cuyo
+        ws activo/propio era este workspace se reasignan a otro de los suyos o
+        se les crea uno automáticamente.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Workspace eliminado (soft-delete)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  deleted:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Solo el creador puede eliminar este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/workspaces/{id}/seed-admin:
+    post:
+      summary: Crear el primer admin de un workspace
+      description: |
+        Crea el primer usuario admin para un workspace, sin invitation_code.
+        Devuelve un JWT para que el nuevo usuario pueda loguearse inmediatamente.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  pattern: '^[a-zA-Z0-9_]+$'
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+      responses:
+        '201':
+          description: Admin creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  username:
+                    type: string
+                  email:
+                    type: string
+                  workspace_id:
+                    type: integer
+                  token:
+                    type: string
+                    description: JWT para que el nuevo admin pueda loguearse
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Sin permisos para administrar el workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: El email o username ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workspaces/{id}/members:
+    post:
+      summary: Agregar miembro a un workspace
+      description: |
+        Agrega un usuario como miembro del workspace. Notifica al usuario agregado.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: integer
+                role:
+                  type: string
+                  enum: [admin, member]
+      responses:
+        '201':
+          description: Miembro agregado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: boolean
+                  workspaceId:
+                    type: integer
+                  workspaceName:
+                    type: string
+                  role:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace o alcanzó el máximo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Usuario o workspace no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Quitar miembro de un workspace
+      description: |
+        Quita a un usuario del workspace. El creador del workspace nunca puede
+        ser removido. El usuario no puede quitarse a sí mismo.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Miembro removido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    type: boolean
+                  workspaceId:
+                    type: integer
+                  userId:
+                    type: integer
+        '400':
+          description: No puedes quitarte a ti mismo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro del workspace o el target es el creador
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Workspace, miembro o contacto no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workspaces/{id}/contacts:
+    post:
+      summary: Importar contactos del móvil al workspace
+      description: |
+        Importa (upsert por email > phone > name) los contactos del móvil al
+        workspace. Solo visibles para miembros de ese workspace (aislamiento).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactImportInput'
+      responses:
+        '201':
+          description: Contactos importados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Listar contactos importados del workspace
+      description: |
+        Lista los contactos del móvil importados al workspace con estado:
+        registeredUserId/isMember (si ya es usuario de la app) e
+        invitationCode (si se le generó un código).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de contactos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workspaces/{id}/contacts/match:
+    post:
+      summary: Comparar contactos contra usuarios registrados
+      description: |
+        Recibe contactos del móvil y devuelve cuáles corresponden a usuarios
+        registrados (match por email) y cuáles no (requieren código).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactImportInput'
+      responses:
+        '200':
+          description: Resultado del match
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactMatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workspaces/{id}/contacts/{contactId}:
+    delete:
+      summary: Quitar un contacto importado
+      description: Elimina el contacto importado del workspace.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Contacto eliminado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    type: boolean
+                  id:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Contacto no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/tenants:
+    post:
+      summary: Crear un tenant
+      description: |
+        Deprecated — alias de compatibilidad del nuevo modelo de workspaces.
+        Crea un workspace; cualquier usuario autenticado puede crear el suyo.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantInput'
+      responses:
+        '201':
+          description: Tenant creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                  maxSeats:
+                    type: integer
+                  isActive:
+                    type: boolean
+                  firstAdminEmail:
+                    type: string
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Sin permisos para crear
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: slug ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Listar tenants
+      description: |
+        Deprecated — alias de compatibilidad. Lista los workspaces
+        de los que el usuario es miembro.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tenants/me:
+    get:
+      summary: Info del tenant propio
+      description: |
+        Deprecated — alias de compatibilidad. Devuelve info del workspace activo
+        del usuario autenticado.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Información del tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Sin permisos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tenants/{id}:
+    patch:
+      summary: Actualizar tenant
+      description: |
+        Deprecated — alias de compatibilidad de PATCH /api/workspaces/:id.
+        Solo un miembro del workspace puede actualizarlo.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                maxSeats:
+                  type: integer
+                  minimum: 1
+                  maximum: 100000
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Tenant actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  updated:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro de este workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tenants/{id}/seed-admin:
+    post:
+      summary: Crear el primer admin de un workspace
+      description: |
+        Deprecated — alias de compatibilidad de POST /api/workspaces/:id/seed-admin.
+        Crea el primer usuario admin para un workspace, sin invitation_code.
+        Devuelve un JWT para que el nuevo usuario pueda loguearse inmediatamente.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID del tenant/workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  pattern: '^[a-zA-Z0-9_]+$'
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 6
+      responses:
+        '201':
+          description: Admin creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  username:
+                    type: string
+                  email:
+                    type: string
+                  tenant_id:
+                    type: integer
+                  token:
+                    type: string
+                    description: JWT para que el nuevo admin pueda loguearse
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Sin permisos para administrar el workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: El email o username ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/invitations:
+    post:
+      summary: Crear código de invitación
+      description: |
+        Genera un nuevo código de invitación para el workspace activo del usuario.
+        Cualquier miembro del workspace puede generar códigos.
+        El código tiene formato `<SLUG>-<8hex>` (ej: ACMECORP-7A3F9B2E).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationInput'
+      responses:
+        '201':
+          description: Código creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro del workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: Listar códigos de invitación
+      description: |
+        Lista todos los códigos de invitación del workspace activo
+        (incluye revocados y usados, ordenados por created_at DESC).
+        Cualquier miembro del workspace.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de invitaciones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InvitationCode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro del workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/invitations/{id}:
+    delete:
+      summary: Revocar código de invitación
+      description: |
+        Marca un código como revocado (is_revoked=1). No se puede deshacer.
+        Solo un miembro del workspace al que pertenece el código.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Revocado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  revoked:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro del workspace del código
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/users:
+    get:
+      summary: Listar usuarios del workspace
+      description: |
+        Lista los usuarios del workspace activo del usuario autenticado
+        (o del workspace indicado por query), con paginación.
+        Solo miembros del workspace.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: workspace_id
+          in: query
+          schema:
+            type: integer
+            description: 'ID del workspace a listar (default: workspace activo)'
+      responses:
+        '200':
+          description: Lista paginada de usuarios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminUser'
+                  total:
+                    type: integer
+                  offset:
+                    type: integer
+                  limit:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No eres miembro del workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/admin/users/{id}:
+    patch:
+      summary: Suspender/activar a un usuario
+      description: |
+        Solo un miembro del workspace. No puede modificarse a sí mismo.
+        Cambio posible:
+        - isSuspended (bool): suspender o reactivar la cuenta
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isSuspended:
+                  type: boolean
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  updated:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: El usuario no pertenece al workspace o no tienes permisos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Eliminar usuario del workspace
+      description: |
+        Solo un miembro del workspace. No puede eliminarse a sí mismo.
+        Se elimina la membership; si no le quedan workspaces, se borra el usuario
+        (borrado físico con ON DELETE CASCADE en messages/group_members).
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Usuario eliminado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  deleted:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: El usuario no pertenece al workspace o no tienes permisos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════════
+  # DEBUG / TEST (push notifications)
+  # ══════════════════════════════════════════════
+  /api/users/push-tokens:
+    get:
+      summary: Listar push tokens del usuario (debug)
+      description: |
+        Devuelve los Expo push tokens registrados para el usuario autenticado.
+        Solo uso en depuración para verificar que los tokens se registraron correctamente.
+      tags: [Debug]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de tokens registrados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushTokensResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/push/test:
+    post:
+      summary: Enviar push de prueba (debug)
+      description: |
+        Envía una notificación push de prueba al usuario especificado
+        (o al propio usuario autenticado si no se especifica).
+        Solo uso en depuración.
+      tags: [Debug]
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushTestRequest'
+      responses:
+        '200':
+          description: Resultado del envío de prueba
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushTestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+x-webhooks:
+  # CLIENTE -> SERVIDOR
+  send_message:
+    summary: Enviar mensaje de texto
+    description: |
+      Persiste el mensaje en DB y lo reenvía al receptor(s).
+      Para chat 1-a-1: requiere receiverId.
+      Para grupo: requiere groupId.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SendMessageRequest'
+
+  typing:
+    summary: Indicar escritura
+    description: Notifica al receptor que el usuario está escribiendo.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              receiverId:
+                type: integer
+              groupId:
+                type: integer
+              isTyping:
+                type: boolean
+                example: true
+
+  mark_read:
+    summary: Marcar mensajes como leídos
+    description: Marca como leídos todos los mensajes no leídos del senderId hacia el usuario actual.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [senderId]
+            properties:
+              senderId:
+                type: integer
+
+  call_user:
+    summary: Iniciar llamada WebRTC
+    description: Envía oferta SDP al usuario destino para iniciar llamada de voz o video.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [targetId, offer, callType]
+            properties:
+              targetId:
+                type: integer
+              offer:
+                type: object
+                description: Oferta SDP
+              callType:
+                type: string
+                enum: [voice, video]
+
+  answer_call:
+    summary: Responder llamada
+    description: Envía respuesta SDP al caller aceptando la llamada.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [targetId, answer]
+            properties:
+              targetId:
+                type: integer
+              answer:
+                type: object
+                description: Respuesta SDP
+
+  ice_candidate:
+    summary: Intercambiar ICE candidate
+    description: Releva candidates ICE entre peers para establecer conexión P2P.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [targetId, candidate]
+            properties:
+              targetId:
+                type: integer
+              candidate:
+                type: object
+                description: ICE candidate
+
+  end_call:
+    summary: Finalizar llamada
+    description: Notifica al otro peer que la llamada terminó.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [targetId]
+            properties:
+              targetId:
+                type: integer
+
+  toggle_audio:
+    summary: Silenciar o activar micrófono
+    description: Notifica al peer sobre el estado del audio local.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [targetId, enabled]
+            properties:
+              targetId:
+                type: integer
+              enabled:
+                type: boolean
+
+  toggle_video:
+    summary: Activar o desactivar cámara
+    description: Notifica al peer sobre el estado del video local.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [targetId, enabled]
+            properties:
+              targetId:
+                type: integer
+              enabled:
+                type: boolean
+
+  # SERVIDOR -> CLIENTE
+  incoming_call:
+    summary: Notificación de llamada entrante
+    description: El servidor notifica al destino que alguien lo está llamando.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              callerId:
+                type: integer
+              callerUsername:
+                type: string
+              offer:
+                type: object
+              callType:
+                type: string
+                enum: [voice, video]
+
+  call_answered:
+    summary: Llamada aceptada
+    description: El servidor notifica al caller que el destino aceptó la llamada.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              answererId:
+                type: integer
+              answer:
+                type: object
+
+  call_ended:
+    summary: Llamada finalizada
+    description: El servidor notifica a ambos peers que la llamada terminó.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              endedBy:
+                type: integer
+
+  new_message:
+    summary: Nuevo mensaje recibido
+    description: Mensaje de chat en tiempo real (1-a-1 o grupo).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+
+  typing_indicator:
+    summary: Indicador de escritura
+    description: Notifica que un contacto está escribiendo.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              userId:
+                type: integer
+              groupId:
+                type: integer
+              isTyping:
+                type: boolean
+
+  messages_read:
+    summary: Confirmación de lectura (1-a-1)
+    description: Notifica al remitente que sus mensajes fueron leídos en un chat 1-a-1.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              readBy:
+                type: integer
+
+  group_messages_read:
+    summary: Confirmación de lectura en grupo
+    description: Notifica a los miembros del grupo que alguien marcó los mensajes como leídos.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              groupId:
+                type: integer
+              readBy:
+                type: integer
+
+  audio_toggled:
+    summary: Peer silenció o activó micrófono
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              userId:
+                type: integer
+              enabled:
+                type: boolean
+
+  video_toggled:
+    summary: Peer activó o desactivó cámara
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              userId:
+                type: integer
+              enabled:
+                type: boolean
+
+  user_status:
+    summary: Cambio de estado online/offline
+    description: Se emite a todos los clientes cuando un usuario se conecta o desconecta.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              userId:
+                type: integer
+              is_online:
+                type: boolean
+
+  # ──────────────────────────────────────────────
+  # LLAMADAS GRUPALES (LiveKit SFU)
+  # ──────────────────────────────────────────────
+  group_call_started:
+    summary: Llamada grupal iniciada
+    description: >
+      Un miembro del grupo inició una llamada grupal.
+      El servidor reenvía este evento a todos los miembros del grupo
+      (excepto al iniciador) con los datos de la sala LiveKit.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              groupId:
+                type: integer
+              groupName:
+                type: string
+                description: Nombre del grupo para mostrar en el modal entrante
+              roomName:
+                type: string
+              callType:
+                type: string
+                enum: [voice, video]
+              startedBy:
+                type: integer
+              startedByName:
+                type: string
+
+  group_call_ended:
+    summary: Llamada grupal finalizada
+    description: Se emite a todos los clientes cuando una llamada grupal termina.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              groupId:
+                type: integer
+
+  group_call_declined:
+    summary: Llamada grupal rechazada
+    description: Se emite cuando un miembro rechaza unirse a una llamada grupal.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              groupId:
+                type: integer
+              userId:
+                type: integer
+                description: ID del usuario que rechazó

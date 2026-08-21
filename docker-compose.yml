@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: communicator-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-communicator}
+      POSTGRES_PASSWORD: ${DB_PASS:-communicator_dev}
+      POSTGRES_DB: ${DB_NAME:-communicator_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-communicator} -d ${DB_NAME:-communicator_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: communicator-server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-communicator}
+      DB_PASS: ${DB_PASS:-communicator_dev}
+      DB_NAME: ${DB_NAME:-communicator_db}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+    ports:
+      - "8080:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/public/uploads
+      - avatars:/app/public/avatars
+
+volumes:
+  pgdata:
+  uploads:
+  avatars:

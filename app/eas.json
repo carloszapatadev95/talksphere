@@ -1,0 +1,41 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "API_URL": "https://communicator-app.onrender.com/api",
+        "SOCKET_URL": "https://communicator-app.onrender.com",
+        "EXPO_PROJECT_ID": "8086477f-61ad-4be7-b471-970124ce23d1",
+        "LIVEKIT_URL": "wss://communicator-app-tz0htm2b.livekit.cloud"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "env": {
+        "API_URL": "https://communicator-app.onrender.com/api",
+        "SOCKET_URL": "https://communicator-app.onrender.com",
+        "EXPO_PROJECT_ID": "8086477f-61ad-4be7-b471-970124ce23d1",
+        "LIVEKIT_URL": "wss://communicator-app-tz0htm2b.livekit.cloud",
+        "APP_NAME": "TalkSphere"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
+      }
+    }
+  }
+}

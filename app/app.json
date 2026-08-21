@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "TalkSphere",
+    "slug": "communicator-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "communicator",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chatcallpro.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Communicator necesita acceso a la cámara para videollamadas",
+        "NSMicrophoneUsageDescription": "Communicator necesita acceso al micrófono para llamadas de voz y video"
+      }
+    },
+    "android": {
+      "package": "com.chatcallpro.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_CONTACTS"
+      ]
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A73E8"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Communicator necesita acceso a la cámara para videollamadas",
+          "microphonePermission": "Communicator necesita acceso al micrófono para llamadas"
+        }
+      ],
+      "expo-audio",
+      "expo-secure-store"
+    ]
+  }
+}

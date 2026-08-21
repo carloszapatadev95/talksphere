@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebRTC Test Peer</title>
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #111; color: #ddd; padding: 16px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { color: #0af; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  video { width: 100%; border-radius: 8px; background: #222; aspect-ratio: 4/3; }
+  .card { background: #1a1a2e; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  input, select, button { width: 100%; padding: 10px; margin: 4px 0; border: 1px solid #333; border-radius: 6px; background: #16213e; color: #fff; font-size: 14px; }
+  button { background: #0af; color: #000; font-weight: bold; cursor: pointer; border: none; }
+  button:hover { background: #3cf; }
+  button.danger { background: #e33; }
+  button.danger:hover { background: #f55; }
+  button.success { background: #2a2; }
+  button.success:hover { background: #4c4; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .log { height: 150px; overflow-y: auto; background: #0a0a1a; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px; }
+  .log div { padding: 2px 0; border-bottom: 1px solid #1a1a2e; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px; }
+  .badge.online { background: #2a2; }
+  .badge.offline { background: #555; }
+  .flex { display: flex; gap: 8px; }
+  .flex button { flex: 1; }
+  .status { font-size: 13px; color: #888; margin: 4px 0; }
+  .user-list { max-height: 200px; overflow-y: auto; }
+  .user-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #1a1a2e; }
+  .user-item:last-child { border-bottom: none; }
+  label { font-size: 12px; color: #888; display: block; margin-top: 8px; }
+  .inline { display: flex; gap: 8px; align-items: center; }
+  .inline input { flex: 1; }
+  .inline button { width: auto; white-space: nowrap; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>WebRTC Test Peer</h1>
+
+  <!-- Login -->
+  <div id="loginSection" class="card">
+    <h3>Login / Registro</h3>
+    <input id="displayNameInput" type="text" placeholder="Nombre (solo para registro)">
+    <input id="email" type="email" placeholder="Email" value="zapataaraujo95@gmail.com">
+    <input id="password" type="password" placeholder="Contraseña" value="password">
+    <div class="inline">
+      <input id="loginAs" placeholder="O login como userId (opcional)">
+      <button onclick="login()">Login</button>
+      <button onclick="register()">Registrarse</button>
+    </div>
+    <div class="status" id="loginStatus"></div>
+  </div>
+
+  <!-- Main (after login) -->
+  <div id="mainSection" class="hidden">
+    <!-- Status -->
+    <div class="card">
+      <div class="flex">
+        <span>Conectado como: <strong id="displayName"></strong> (ID: <span id="myId"></span>)</span>
+        <span class="badge online" id="socketStatus">Socket conectado</span>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div class="card">
+      <h3>Usuarios disponibles</h3>
+      <div class="user-list" id="userList"></div>
+    </div>
+
+    <!-- Call Controls -->
+    <div class="card">
+      <h3>Llamada</h3>
+      <div class="flex">
+        <select id="targetUser"></select>
+        <select id="callTypeSelect">
+          <option value="video">Video</option>
+          <option value="voice">Voz</option>
+        </select>
+        <button class="success" id="callBtn" onclick="startCall()">Llamar</button>
+      </div>
+      <div class="flex" style="margin-top:8px">
+        <button class="danger" id="endCallBtn" onclick="endCall()" disabled>Colgar</button>
+        <button id="toggleAudioBtn" onclick="toggleAudio()" disabled>Silenciar</button>
+        <button id="toggleVideoBtn" onclick="toggleVideo()" disabled>Apagar video</button>
+      </div>
+      <div class="status" id="callStatus">Sin llamada activa</div>
+    </div>
+
+    <!-- Incoming Call -->
+    <div id="incomingCall" class="card hidden">
+      <h3 style="color:#ff0">Llamada entrante...</h3>
+      <p>De: <strong id="incomingCaller"></strong></p>
+      <p>Tipo: <span id="incomingType"></span></p>
+      <div class="flex">
+        <button class="success" onclick="acceptCall()">Aceptar</button>
+        <button class="danger" onclick="rejectCall()">Rechazar</button>
+      </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="card">
+      <h3>Chat</h3>
+      <div class="inline">
+        <select id="chatMode" onchange="onChatModeChange()">
+          <option value="1to1">1 a 1</option>
+          <option value="group">Grupo</option>
+        </select>
+        <select id="chatTargetUser" style="flex:1"><option value="">Selecciona...</option></select>
+        <button class="success" onclick="loadChatHistory()" style="width:auto">Cargar</button>
+      </div>
+      <div class="log" id="chatMessages" style="height:200px"></div>
+      <div class="status" id="chatTyping" style="display:none">Escribiendo...</div>
+      <div class="inline">
+        <input id="chatInput" type="text" placeholder="Escribe un mensaje..."
+               onkeydown="if(event.key==='Enter')sendChatMessage()"
+               oninput="onChatTyping()">
+        <button onclick="sendChatMessage()">Enviar</button>
+      </div>
+    </div>
+
+    <!-- Video -->
+    <div class="grid">
+      <div>
+        <label>Local</label>
+        <video id="localVideo" autoplay muted playsinline></video>
+      </div>
+      <div>
+        <label>Remoto</label>
+        <video id="remoteVideo" autoplay playsinline></video>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <h3>Log</h3>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_URL = 'http://localhost:3000';
+let socket = null;
+let pc = null;
+let localStream = null;
+let currentCall = null; // { peerId, peerName, callType }
+let incomingCallData = null;
+let myUserId = null;
+let myUserName = null;
+
+function log(msg) {
+  const el = document.getElementById('log');
+  const d = document.createElement('div');
+  d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function register() {
+  const username = document.getElementById('displayNameInput').value || `user_${Date.now()}`;
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  try {
+    const res = await fetch(`${API_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || 'Registro falló');
+    await handleLoginResponse(data);
+  } catch (err) {
+    document.getElementById('loginStatus').textContent = `Error: ${err.message}`;
+  }
+}
+
+async function handleLoginResponse(data) {
+  const loginAs = document.getElementById('loginAs').value.trim();
+  jwtToken = data.token;
+  myUserId = data.user.id;
+  myUserName = data.user.displayName || data.user.username;
+
+  // Override userId if loginAs specified (for testing)
+  if (loginAs) myUserId = parseInt(loginAs);
+
+  document.getElementById('displayName').textContent = myUserName;
+  document.getElementById('myId').textContent = myUserId;
+  document.getElementById('loginSection').classList.add('hidden');
+  document.getElementById('mainSection').classList.remove('hidden');
+  document.getElementById('loginStatus').textContent = '';
+
+  log(`Login exitoso: ${myUserName} (ID: ${myUserId})`);
+  connectSocket(jwtToken);
+}
+
+async function login() {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  try {
+    const res = await fetch(`${API_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || 'Login falló');
+    await handleLoginResponse(data);
+  } catch (err) {
+    document.getElementById('loginStatus').textContent = `Error: ${err.message}`;
+  }
+}
+
+function connectSocket(token) {
+  socket = io(API_URL, {
+    auth: { token },
+    transports: ['websocket'],
+  });
+
+  socket.on('connect', () => {
+    log(`Socket conectado (ID: ${socket.id})`);
+    document.getElementById('socketStatus').textContent = 'Socket conectado';
+    fetchUsers();
+    setupChatListeners();
+  });
+
+  socket.on('disconnect', () => {
+    log('Socket desconectado');
+    document.getElementById('socketStatus').textContent = 'Desconectado';
+  });
+
+  socket.on('connect_error', (err) => {
+    log(`Error socket: ${err.message}`);
+    document.getElementById('socketStatus').textContent = `Error: ${err.message}`;
+  });
+
+  socket.on('incoming_call', handleIncomingCall);
+  socket.on('call_answered', handleCallAnswered);
+  socket.on('ice_candidate', handleIceCandidate);
+  socket.on('call_ended', handleCallEnded);
+  socket.on('audio_toggled', ({ userId, enabled }) => {
+    log(`Usuario ${userId} ${enabled ? 'activó' : 'silenció'} audio`);
+  });
+  socket.on('video_toggled', ({ userId, enabled }) => {
+    log(`Usuario ${userId} ${enabled ? 'activó' : 'apagó'} video`);
+  });
+  socket.on('messages_read', ({ readBy }) => {
+    log(`Mensajes leídos por usuario ${readBy}`);
+    const msgs = document.getElementById('chatMessages');
+    const items = msgs.querySelectorAll('div');
+    items.forEach(el => {
+      if (el.textContent && el.textContent.startsWith('[') && el.style.color === 'rgb(0, 170, 255)') {
+        if (!el.textContent.includes('✓✓')) {
+          el.textContent += ' ✓✓';
+        }
+      }
+    });
+  });
+}
+
+let jwtToken = '';
+let pendingCandidates = [];
+
+async function fetchUsers() {
+  try {
+    const res = await fetch(`${API_URL}/api/users/contacts`, {
+      headers: { 'Authorization': `Bearer ${jwtToken}` },
+    });
+    const data = await res.json();
+    const users = data.contacts || [];
+    const list = document.getElementById('userList');
+    const select = document.getElementById('targetUser');
+    list.innerHTML = '';
+    select.innerHTML = '';
+    users.forEach(u => {
+      if (u.id === myUserId) return;
+      const item = document.createElement('div');
+      item.className = 'user-item';
+      const online = u.is_online === 1 || u.is_online === true;
+      item.innerHTML = `<span>${u.displayName || u.username} (ID: ${u.id})</span><span class="badge ${online ? 'online' : 'offline'}">${online ? 'online' : 'offline'}</span>`;
+      list.appendChild(item);
+
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      const isOnline = u.is_online === 1 || u.is_online === true;
+      opt.textContent = `${u.displayName || u.username} (ID: ${u.id})${isOnline ? ' [online]' : ''}`;
+      select.appendChild(opt);
+    });
+    log(`Usuarios cargados: ${users.length}`);
+  } catch (err) {
+    log(`Error cargando usuarios: ${err.message}`);
+  }
+}
+
+async function startCall() {
+  const targetId = parseInt(document.getElementById('targetUser').value);
+  const callType = document.getElementById('callTypeSelect').value;
+  if (!targetId) { log('Selecciona un usuario'); return; }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: callType === 'video',
+    });
+    document.getElementById('localVideo').srcObject = stream;
+    localStream = stream;
+
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject',
+        },
+      ],
+    });
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        log(`[ICE] cand: ${e.candidate.candidate}`);
+        socket.emit('ice_candidate', { targetId, candidate: e.candidate });
+      }
+    };
+
+    pc.ontrack = (e) => {
+      const tracks = e.streams[0].getTracks();
+      log(`[TRACK] ontrack: ${tracks.length} tracks - ${tracks.map(t => t.kind + (t.enabled ? '' : '(muted)')).join(', ')}`);
+      document.getElementById('remoteVideo').srcObject = e.streams[0];
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      log(`ICE state: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === 'failed') {
+        cleanupCall('Conexión ICE falló');
+      } else if (pc.iceConnectionState === 'disconnected') {
+        log('ICE desconectado, reintentando...');
+      }
+    };
+
+    const localTracks = stream.getTracks();
+    log(`[MEDIA] local tracks: ${localTracks.length} - ${localTracks.map(t => t.kind + '=' + t.readyState).join(', ')}`);
+    localTracks.forEach(t => pc.addTrack(t, stream));
+
+    const offer = await pc.createOffer();
+    log(`[SDP] offer media: ${(offer.sdp.match(/m=(\w+)/g) || []).join(', ')}`);
+    await pc.setLocalDescription(offer);
+
+    socket.emit('call_user', { targetId, offer, callType });
+
+    currentCall = { peerId: targetId, callType };
+    document.getElementById('callStatus').textContent = `Llamando a ${targetId}...`;
+    document.getElementById('callBtn').disabled = true;
+    document.getElementById('endCallBtn').disabled = false;
+    document.getElementById('toggleAudioBtn').disabled = false;
+    document.getElementById('toggleVideoBtn').disabled = false;
+
+    log(`Iniciando llamada ${callType} a usuario ${targetId}`);
+  } catch (err) {
+    log(`Error iniciando llamada: ${err.message}`);
+  }
+}
+
+function handleIncomingCall({ callerId, callerUsername, offer, callType }) {
+  log(`Llamada entrante de usuario ${callerId} (${callerUsername || '?'}), tipo: ${callType}`);
+  incomingCallData = { callerId, offer, callType };
+
+  const name = document.querySelector(`#targetUser option[value="${callerId}"]`);
+  document.getElementById('incomingCaller').textContent = name ? name.textContent.split('[')[0].trim() : (callerUsername || `Usuario ${callerId}`);
+  document.getElementById('incomingType').textContent = callType === 'video' ? 'Video' : 'Voz';
+  document.getElementById('incomingCall').classList.remove('hidden');
+}
+
+async function acceptCall() {
+  if (!incomingCallData) return;
+  const { callerId, offer, callType } = incomingCallData;
+
+  document.getElementById('incomingCall').classList.add('hidden');
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: callType === 'video',
+    });
+    document.getElementById('localVideo').srcObject = stream;
+    localStream = stream;
+
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject',
+        },
+      ],
+    });
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        log(`[ICE] cand: ${e.candidate.candidate}`);
+        socket.emit('ice_candidate', { targetId: callerId, candidate: e.candidate });
+      }
+    };
+
+    pc.ontrack = (e) => {
+      const tracks = e.streams[0].getTracks();
+      log(`[TRACK] ontrack: ${tracks.length} tracks - ${tracks.map(t => t.kind + (t.enabled ? '' : '(muted)')).join(', ')}`);
+      document.getElementById('remoteVideo').srcObject = e.streams[0];
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      log(`ICE state: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === 'failed') {
+        cleanupCall('Conexión ICE falló');
+      } else if (pc.iceConnectionState === 'disconnected') {
+        log('ICE desconectado, reintentando...');
+      }
+    };
+
+    const localTracks = stream.getTracks();
+    log(`[MEDIA] local tracks: ${localTracks.length} - ${localTracks.map(t => t.kind + '=' + t.readyState).join(', ')}`);
+    localTracks.forEach(t => pc.addTrack(t, stream));
+
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    log(`[SDP] remote offer media: ${(offer.sdp.match(/m=(\w+)/g) || []).join(', ')}`);
+    // Flush pending ICE candidates
+    const flush = pendingCandidates;
+    pendingCandidates = [];
+    flush.forEach(c => {
+      pc.addIceCandidate(new RTCIceCandidate(c)).catch(err => {
+        log(`Error addIceCandidate: ${err.message}`);
+      });
+    });
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    log(`[SDP] answer media: ${(answer.sdp.match(/m=(\w+)/g) || []).join(', ')}`);
+
+    socket.emit('answer_call', { targetId: callerId, answer });
+
+    currentCall = { peerId: callerId, callType };
+    document.getElementById('callStatus').textContent = `En llamada con usuario ${callerId}`;
+    document.getElementById('callBtn').disabled = true;
+    document.getElementById('endCallBtn').disabled = false;
+    document.getElementById('toggleAudioBtn').disabled = false;
+    document.getElementById('toggleVideoBtn').disabled = false;
+
+    log(`Llamada aceptada con usuario ${callerId}`);
+  } catch (err) {
+    log(`Error aceptando llamada: ${err.message}`);
+  }
+  incomingCallData = null;
+}
+
+function rejectCall() {
+  if (!incomingCallData) return;
+  const { callerId } = incomingCallData;
+  socket.emit('end_call', { targetId: callerId });
+  document.getElementById('incomingCall').classList.add('hidden');
+  log(`Llamada rechazada de usuario ${callerId}`);
+  incomingCallData = null;
+}
+
+function handleCallAnswered({ answererId, answer }) {
+  log(`Llamada respondida por usuario ${answererId}`);
+  if (pc) {
+    pc.setRemoteDescription(new RTCSessionDescription(answer)).then(() => {
+      // Flush pending ICE candidates
+      const pending = pendingCandidates;
+      pendingCandidates = [];
+      pending.forEach(c => {
+        pc.addIceCandidate(new RTCIceCandidate(c)).catch(err => {
+          log(`Error addIceCandidate: ${err.message}`);
+        });
+      });
+    }).catch(err => {
+      log(`Error setRemoteDescription: ${err.message}`);
+    });
+  }
+  document.getElementById('callStatus').textContent = `En llamada con usuario ${answererId}`;
+}
+
+async function handleIceCandidate({ senderId, candidate }) {
+  if (!candidate) return;
+  if (pc && pc.remoteDescription) {
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      log(`Error addIceCandidate: ${err.message}`);
+    }
+  } else {
+    pendingCandidates.push(candidate);
+  }
+}
+
+function handleCallEnded({ endedBy }) {
+  log(`Llamada finalizada por usuario ${endedBy}`);
+  cleanupCall(`Terminada por ${endedBy}`);
+}
+
+function endCall() {
+  if (currentCall) {
+    socket.emit('end_call', { targetId: currentCall.peerId });
+  }
+  cleanupCall('Tú colgaste');
+}
+
+function cleanupCall(reason) {
+  if (pc) { pc.close(); pc = null; }
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  document.getElementById('localVideo').srcObject = null;
+  document.getElementById('remoteVideo').srcObject = null;
+  currentCall = null;
+  incomingCallData = null;
+  document.getElementById('incomingCall').classList.add('hidden');
+  document.getElementById('callStatus').textContent = 'Sin llamada activa';
+  document.getElementById('callBtn').disabled = false;
+  document.getElementById('endCallBtn').disabled = true;
+  document.getElementById('toggleAudioBtn').disabled = true;
+  document.getElementById('toggleVideoBtn').disabled = true;
+  document.getElementById('toggleAudioBtn').textContent = 'Silenciar';
+  document.getElementById('toggleVideoBtn').textContent = 'Apagar video';
+  log(`Llamada finalizada: ${reason}`);
+}
+
+function toggleAudio() {
+  if (!localStream || !currentCall) return;
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (audioTrack) {
+    audioTrack.enabled = !audioTrack.enabled;
+    socket.emit('toggle_audio', { targetId: currentCall.peerId, enabled: audioTrack.enabled });
+    document.getElementById('toggleAudioBtn').textContent = audioTrack.enabled ? 'Silenciar' : 'Activar audio';
+    log(`Audio ${audioTrack.enabled ? 'activado' : 'silenciado'}`);
+  }
+}
+
+function toggleVideo() {
+  if (!localStream || !currentCall) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (videoTrack) {
+    videoTrack.enabled = !videoTrack.enabled;
+    socket.emit('toggle_video', { targetId: currentCall.peerId, enabled: videoTrack.enabled });
+    document.getElementById('toggleVideoBtn').textContent = videoTrack.enabled ? 'Apagar video' : 'Activar video';
+    log(`Video ${videoTrack.enabled ? 'activado' : 'apagado'}`);
+  }
+}
+
+function markMessagesAsRead(targetId) {
+  if (!targetId) return;
+  socket.emit('mark_read', { senderId: targetId });
+}
+
+// ─── Chat ──────────────────────────────────────
+let chatTypingTimeout = null;
+let chatTargetId = null;
+
+function setupChatListeners() {
+  if (!socket) return;
+  socket.on('new_message', (msg) => {
+    const target = getChatTarget();
+    if (msg.group_id) {
+      if (target?.type === 'group' && target.id === msg.group_id) {
+        addChatMessage(msg, msg.sender_id === myUserId);
+      }
+      log(`[Grupo ${msg.group_id}] Mensaje de ${msg.sender_name || 'Usuario ' + msg.sender_id}: ${msg.content.substring(0, 50)}`);
+    } else {
+      const targetId = target?.type === 'user' ? target.id : parseInt(document.getElementById('chatTargetUser').value);
+      if ((msg.sender_id === targetId && msg.receiver_id === myUserId) ||
+          (msg.sender_id === myUserId && msg.receiver_id === targetId)) {
+        addChatMessage(msg, msg.sender_id === myUserId);
+        if (msg.sender_id !== myUserId) {
+          markMessagesAsRead(msg.sender_id);
+        }
+      }
+      log(`Mensaje ${msg.sender_id === myUserId ? 'enviado' : 'recibido'}: ${msg.content.substring(0, 50)}`);
+    }
+  });
+
+  socket.on('typing_indicator', ({ userId, isTyping }) => {
+    const el = document.getElementById('chatTyping');
+    const targetId = parseInt(document.getElementById('chatTargetUser').value);
+    if (userId === targetId) {
+      el.style.display = isTyping ? 'block' : 'none';
+      el.textContent = `Usuario ${targetId} está escribiendo...`;
+    }
+  });
+
+  socket.on('user_status', ({ userId, isOnline }) => {
+    log(`Usuario ${userId} ${isOnline ? 'conectado' : 'desconectado'}`);
+  });
+}
+
+function populateChatUsers() {
+  populateChatTargets();
+  populateChatGroups();
+}
+
+function populateChatTargets() {
+  const mode = document.getElementById('chatMode').value;
+  if (mode !== '1to1') return;
+  const select = document.getElementById('chatTargetUser');
+  const currentVal = select.value;
+  select.innerHTML = '<option value="">Selecciona un usuario</option>';
+  document.querySelectorAll('#targetUser option').forEach(opt => {
+    if (opt.value) {
+      const clone = opt.cloneNode(true);
+      select.appendChild(clone);
+    }
+  });
+  if (currentVal) select.value = currentVal;
+}
+
+async function populateChatGroups() {
+  const mode = document.getElementById('chatMode').value;
+  if (mode !== 'group') return;
+  try {
+    const res = await fetch(`${API_URL}/api/groups`, {
+      headers: { 'Authorization': `Bearer ${jwtToken}` },
+    });
+    const data = await res.json();
+    const groups = data.groups || [];
+    const select = document.getElementById('chatTargetUser');
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Selecciona un grupo</option>';
+    groups.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = 'g' + g.id;
+      opt.textContent = `${g.name} (ID: ${g.id})`;
+      select.appendChild(opt);
+    });
+    if (currentVal) select.value = currentVal;
+  } catch (err) {
+    log(`Error cargando grupos: ${err.message}`);
+  }
+}
+
+function onChatModeChange() {
+  const mode = document.getElementById('chatMode').value;
+  document.getElementById('chatMessages').innerHTML = '';
+  if (mode === '1to1') {
+    populateChatTargets();
+  } else {
+    populateChatGroups();
+  }
+}
+
+function getChatTarget() {
+  const val = document.getElementById('chatTargetUser').value;
+  if (!val) return null;
+  const mode = document.getElementById('chatMode').value;
+  if (mode === 'group') {
+    const id = parseInt(val.substring(1));
+    return { type: 'group', id, label: `grupo ${id}` };
+  }
+  return { type: 'user', id: parseInt(val), label: `usuario ${parseInt(val)}` };
+}
+
+function addChatMessage(msg, isMine) {
+  const el = document.getElementById('chatMessages');
+  const d = document.createElement('div');
+  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const sender = isMine ? 'Tú' : (msg.sender_name || `Usuario ${msg.sender_id}`);
+  const prefix = msg.group_id ? `[Grupo ${msg.group_id}] ` : '';
+  d.textContent = `${prefix}[${time}] ${sender}: ${msg.content}`;
+  d.style.color = isMine ? '#0af' : '#ddd';
+  d.style.padding = '4px 0';
+  d.style.borderBottom = '1px solid #1a1a2e';
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function loadChatHistory() {
+  const target = getChatTarget();
+  if (!target) { logChat('Selecciona un usuario o grupo'); return; }
+  chatTargetId = target.id;
+
+  document.getElementById('chatMessages').innerHTML = '';
+  logChat(`Cargando historial con ${target.label}...`);
+
+  try {
+    let url;
+    if (target.type === 'group') {
+      url = `${API_URL}/api/groups/${target.id}/messages?limit=50`;
+    } else {
+      url = `${API_URL}/api/messages/${target.id}?limit=50`;
+    }
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${jwtToken}` },
+    });
+    const data = await res.json();
+    const msgs = data.messages || [];
+    document.getElementById('chatMessages').innerHTML = '';
+    if (msgs.length === 0) {
+      logChat('Sin mensajes anteriores. Envía el primero!');
+    } else {
+      msgs.forEach(m => addChatMessage(m, m.sender_id === myUserId));
+      logChat(`Historial cargado: ${msgs.length} mensajes`);
+      markMessagesAsRead(target.id);
+    }
+  } catch (err) {
+    logChat(`Error cargando historial: ${err.message}`);
+  }
+}
+
+function sendChatMessage() {
+  const target = getChatTarget();
+  const input = document.getElementById('chatInput');
+  const content = input.value.trim();
+  if (!target) { logChat('Selecciona un usuario o grupo'); return; }
+  if (!content) return;
+
+  const payload = target.type === 'group'
+    ? { groupId: target.id, content }
+    : { receiverId: target.id, content };
+
+  socket.emit('send_message', payload);
+  input.value = '';
+  clearTimeout(chatTypingTimeout);
+  const typingPayload = target.type === 'group'
+    ? { groupId: target.id, isTyping: false }
+    : { receiverId: target.id, isTyping: false };
+  socket.emit('typing', typingPayload);
+
+  logChat(`Mensaje enviado a ${target.label}`);
+}
+
+function onChatTyping() {
+  if (!chatTargetId) return;
+  const target = getChatTarget();
+  if (!target) return;
+  const payload = target.type === 'group'
+    ? { groupId: target.id, isTyping: true }
+    : { receiverId: target.id, isTyping: true };
+  socket.emit('typing', payload);
+  clearTimeout(chatTypingTimeout);
+  chatTypingTimeout = setTimeout(() => {
+    const stopPayload = target.type === 'group'
+      ? { groupId: target.id, isTyping: false }
+      : { receiverId: target.id, isTyping: false };
+    socket.emit('typing', stopPayload);
+  }, 2000);
+}
+
+function logChat(msg) {
+  const el = document.getElementById('chatMessages');
+  const d = document.createElement('div');
+  d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  d.style.color = '#888';
+  d.style.fontStyle = 'italic';
+  d.style.padding = '4px 0';
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+// Populate chat users when call users list is loaded
+const origFetchUsers = fetchUsers;
+fetchUsers = function() {
+  return origFetchUsers().then(() => populateChatUsers());
+};
+</script>
+</body>
+</html>

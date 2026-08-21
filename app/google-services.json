@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "757968057437",
+    "project_id": "communicator-app-67641",
+    "storage_bucket": "communicator-app-67641.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:757968057437:android:c321b73adc568856f909b4",
+        "android_client_info": {
+          "package_name": "com.chatcallpro.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARQ5256YSaiVEwle8i966YB2dJyj0RXXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:757968057437:android:4daaed0350f1d69af909b4",
+        "android_client_info": {
+          "package_name": "com.communicator.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARQ5256YSaiVEwle8i966YB2dJyj0RXXU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

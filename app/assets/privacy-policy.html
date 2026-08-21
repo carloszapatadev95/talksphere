@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de Privacidad - TalkSphere</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; color: #333; line-height: 1.6; }
+    h1 { color: #1A73E8; border-bottom: 2px solid #1A73E8; padding-bottom: 10px; }
+    h2 { color: #1A73E8; margin-top: 30px; }
+    h3 { color: #444; }
+    p { margin: 10px 0; }
+    ul { margin: 10px 0; padding-left: 20px; }
+    li { margin: 5px 0; }
+    .fecha { color: #666; font-style: italic; }
+    .encabezado { background: #f5f7fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+    th { background: #f5f7fa; }
+  </style>
+</head>
+<body>
+  <h1>Política de Privacidad de TalkSphere</h1>
+  <p class="fecha">Última actualización: 19 de junio de 2026</p>
+
+  <div class="encabezado">
+    <p><strong>Responsable:</strong> Carlos Zapata</p>
+    <p><strong>Contacto:</strong> carlos.zapata.dev@gmail.com</p>
+    <p><strong>App:</strong> TalkSphere — Aplicación de mensajería y llamadas</p>
+  </div>
+
+  <h2>1. Información que recopilamos</h2>
+
+  <h3>1.1 Información proporcionada por el usuario</h3>
+  <ul>
+    <li><strong>Correo electrónico</strong> — necesario para el registro e inicio de sesión</li>
+    <li><strong>Nombre de usuario</strong> — mostrado a otros usuarios dentro de la app</li>
+    <li><strong>Contraseña</strong> — almacenada de forma segura mediante hash con bcrypt</li>
+    <li><strong>Foto de perfil (avatar)</strong> — opcional, visible para otros usuarios</li>
+    <li><strong>Mensajes de texto e imágenes</strong> — contenido de las conversaciones</li>
+  </ul>
+
+  <h3>1.2 Información recopilada automáticamente</h3>
+  <ul>
+    <li><strong>Tokens de notificaciones push</strong> — para enviar notificaciones cuando la app no está abierta</li>
+    <li><strong>Estado de conexión</strong> — en línea/desconectado parafunciones de presencia</li>
+    <li><strong>Permisos de cámara y micrófono</strong> — solo para llamadas de voz y video, nunca se graba sin consentimiento</li>
+  </ul>
+
+  <h2>2. Cómo usamos tu información</h2>
+  <ul>
+    <li>Proveer la funcionalidad de mensajería en tiempo real</li>
+    <li>Facilitar llamadas de voz y video 1 a 1 y grupales</li>
+    <li>Enviar notificaciones push de mensajes y llamadas entrantes</li>
+    <li>Mostrar presencia en línea de los contactos</li>
+    <li>Mejorar la experiencia del usuario y solucionar problemas técnicos</li>
+  </ul>
+
+  <h2>3. Base legal para el tratamiento</h2>
+  <p>Tratamos tus datos bajo las siguientes bases legales:</p>
+  <ul>
+    <li><strong>Ejecución de un contrato:</strong> el uso de la app constituye la aceptación de nuestros términos de servicio</li>
+    <li><strong>Consentimiento:</strong> para permisos de cámara, micrófono y notificaciones</li>
+    <li><strong>Interés legítimo:</strong> mejora del servicio y seguridad de la plataforma</li>
+  </ul>
+
+  <h2>4. Compartición de datos con terceros</h2>
+  <table>
+    <tr>
+      <th>Proveedor</th>
+      <th>Servicio</th>
+      <th>Datos compartidos</th>
+      <th>Ubicación</th>
+    </tr>
+    <tr>
+      <td>Firebase (Google)</td>
+      <td>Notificaciones push (FCM V1)</td>
+      <td>Token de dispositivo</td>
+      <td>EE.UU.</td>
+    </tr>
+    <tr>
+      <td>LiveKit Cloud</td>
+      <td>Llamadas grupales de voz/video</td>
+      <td>Streams de audio/video (encriptados DTLS-SRTP)</td>
+      <td>EE.UU.</td>
+    </tr>
+    <tr>
+      <td>Render</td>
+      <td>Hosting del servidor</td>
+      <td>Mensajes, datos de usuario (en tránsito por HTTPS)</td>
+      <td>EE.UU.</td>
+    </tr>
+    <tr>
+      <td>TiDB Cloud</td>
+      <td>Base de datos</td>
+      <td>Mensajes, usuarios, grupos (encriptado TLS 1.2)</td>
+      <td>Singapur (Alicloud)</td>
+    </tr>
+    <tr>
+      <td>Expo</td>
+      <td>Distribución de la app y push</td>
+      <td>Token de dispositivo, identificador de proyecto</td>
+      <td>EE.UU.</td>
+    </tr>
+  </table>
+  <p>No vendemos ni alquilemos datos personales a terceros.</p>
+
+  <h2>5. Seguridad de los datos</h2>
+  <ul>
+    <li><strong>Autenticación:</strong> JWT con tokens almacenados en SecureStore (encriptado a nivel de sistema operativo)</li>
+    <li><strong>Contraseñas:</strong> hasheadas con bcrypt</li>
+    <li><strong>Comunicaciones:</strong> todo el tráfico entre la app y el servidor usa HTTPS/WSS (TLS)</li>
+    <li><strong>Llamadas:</strong> los streams de audio/video usan DTLS-SRTP (encriptación estándar de WebRTC)</li>
+    <li><strong>Base de datos:</strong> conexión encriptada con TLS 1.2 hacia TiDB Cloud</li>
+    <li><strong>Mensajes en reposo:</strong> almacenados en MySQL sin encriptación adicional (no E2EE)</li>
+  </ul>
+
+  <h2>6. Retención de datos</h2>
+  <ul>
+    <li><strong>Cuentas:</strong> mantenemos tu cuenta hasta que solicites su eliminación</li>
+    <li><strong>Mensajes:</strong> conservados hasta que el usuario los elimine o se elimine la cuenta</li>
+    <li><strong>Tokens push:</strong> eliminados cuando desinstalas la app o cierras sesión</li>
+    <li><strong>Registros del servidor:</strong> eliminados periódicamente</li>
+  </ul>
+
+  <h2>7. Tus derechos</h2>
+  <p>De acuerdo con el Reglamento General de Protección de Datos (GDPR) y leyes aplicables, tienes derecho a:</p>
+  <ul>
+    <li><strong>Acceso:</strong> solicitar una copia de tus datos personales</li>
+    <li><strong>Rectificación:</strong> corregir datos inexactos o incompletos</li>
+    <li><strong>Supresión:</strong> solicitar la eliminación de tu cuenta y datos asociados</li>
+    <li><strong>Portabilidad:</strong> recibir tus datos en un formato estructurado</li>
+    <li><strong>Oposición:</strong> oponerte al tratamiento de tus datos para fines específicos</li>
+    <li><strong>Retirar consentimiento:</strong> en cualquier momento, sin afectar la legalidad del tratamiento previo</li>
+  </ul>
+
+  <h2>8. Permisos de la app</h2>
+  <table>
+    <tr>
+      <th>Permiso</th>
+      <th>Uso</th>
+      <th>Requerido</th>
+    </tr>
+    <tr>
+      <td>Cámara</td>
+      <td>Videollamadas y foto de perfil</td>
+      <td>No (función limitada sin él)</td>
+    </tr>
+    <tr>
+      <td>Micrófono</td>
+      <td>Llamadas de voz y video</td>
+      <td>No (función limitada sin él)</td>
+    </tr>
+    <tr>
+      <td>Notificaciones</td>
+      <td>Alertas de mensajes y llamadas</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>Almacenamiento</td>
+      <td>Compartir imágenes (Android &le; 32)</td>
+      <td>No</td>
+    </tr>
+  </table>
+
+  <h2>9. Cambios a esta política</h2>
+  <p>Podemos actualizar esta política de privacidad periódicamente. Notificaremos los cambios materiales a través de la app o por correo electrónico. El uso continuado de la app después de los cambios constituye la aceptación de la política actualizada.</p>
+
+  <h2>10. Contacto</h2>
+  <p>Si tienes preguntas sobre esta política de privacidad o deseas ejercer tus derechos, contáctanos en:</p>
+  <p><strong>Email:</strong> carlos.zapata.dev@gmail.com</p>
+  <p><strong>Responsable:</strong> Carlos Zapata</p>
+
+  <hr>
+  <p style="color: #999; font-size: 0.9em;">TalkSphere — Versión 1.0.0 — Generado el 19 de junio de 2026</p>
+</body>
+</html>

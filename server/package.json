@@ -1,0 +1,52 @@
+{
+  "name": "communicator-server",
+  "version": "1.0.0",
+  "description": "Communicator App - Backend with Express, Socket.io, PostgreSQL",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "generate-types": "openapi-typescript ./openapi.yaml -o src/types/openapi.ts",
+    "postbuild": "cp -r src/db/migrations dist/db/migrations",
+    "start": "node dist/index.js",
+    "test": "jest --forceExit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "expo-server-sdk": "^6.1.0",
+    "express": "^4.21.2",
+    "express-openapi-validator": "^5.6.2",
+    "express-rate-limit": "^7.5.0",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.0.0",
+    "js-yaml": "^4.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.15.4",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.13.1",
+    "socket.io": "^4.8.1",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.13.10",
+    "@types/pg": "^8.11.10",
+    "@types/supertest": "^7.2.0",
+    "@types/swagger-ui-express": "^4.1.8",
+    "jest": "^30.4.2",
+    "openapi-typescript": "^7.13.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.11",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.2"
+  }
+}

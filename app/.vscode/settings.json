@@ -1,0 +1,9 @@
+{
+  "typescript.validate.enable": true,
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "javascript.validate.enable": false,
+  "files.exclude": {
+    "**/node_modules": true
+  }
+}

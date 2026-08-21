@@ -1,0 +1,22 @@
+node_modules/
+server/node_modules/
+server/.env
+server/dist/
+server/coverage/
+app/.env
+*.tsbuildinfo
+.opencode/
+opencode.json
+AGENTS.md
+connect-phone.sh
+setup-wifi.sh
+server/public/uploads/
+server/public/avatars/
+NOTA.md
+
+# Firmas
+*.keystore
+*.jks
+
+# Artefactos de build
+*.apk
