@@ -1,5 +1,6 @@
 import request from 'supertest';
 import express from 'express';
+import { mockAuthMiddleware } from '../helpers';
 
 jest.mock('../../src/db/connection', () => ({
   __esModule: true,
@@ -9,6 +10,8 @@ jest.mock('../../src/db/connection', () => ({
   },
 }));
 
+
+mockAuthMiddleware();
 function getPool() {
   const poolModule = require('../../src/db/connection');
   return poolModule.default || poolModule;

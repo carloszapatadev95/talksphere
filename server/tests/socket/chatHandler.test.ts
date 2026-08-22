@@ -82,10 +82,11 @@ describe('chatHandler', () => {
 
     it('should broadcast to all group members except sender', async () => {
       pool.query
-        .mockResolvedValueOnce([{ insertId: 101 }])
-        .mockResolvedValueOnce([[]])                          // sender avatar
-        .mockResolvedValueOnce([[{ 1: 1 }]])                  // group membership
-        .mockResolvedValueOnce([[{ name: 'Test Group' }]])    // group row
+        .mockResolvedValueOnce([[{ workspace_id: 7 }]])     // resolveWorkspaceId: groups.workspace_id
+        .mockResolvedValueOnce([{ insertId: 101 }])         // INSERT message
+        .mockResolvedValueOnce([[]])                        // sender avatar
+        .mockResolvedValueOnce([[{ 1: 1 }]])                // group membership
+        .mockResolvedValueOnce([[{ name: 'Test Group' }]])  // group row
         .mockResolvedValueOnce([[{ user_id: 1 }, { user_id: 2 }, { user_id: 3 }]]); // members
       const { socket, io } = createMockSocket(1);
       setupChatHandler(io, socket, 1);

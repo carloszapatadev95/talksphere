@@ -1,6 +1,7 @@
 import request from 'supertest';
 import express from 'express';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 jest.mock('../../src/db/connection', () => ({
   __esModule: true,
@@ -113,16 +114,16 @@ describe('POST /api/auth/register', () => {
 
   it('should register with invitation code and match workspace_contacts by email', async () => {
     mockConn.query
-      .mockResolvedValueOnce([[]])                       // existing users -> none
-      .mockResolvedValueOnce([[{ id: 10, workspace_id: 2, created_by: 3, max_uses: 5, use_count: 0, is_revoked: 0, expires_at: null }]]) // code lookup
-      .mockResolvedValueOnce([[{ id: 2, max_seats: 50, is_active: 1 }]]) // workspace
-      .mockResolvedValueOnce([[{ used: 1 }]])             // seats
+      .mockResolvedValueOnce([[{ id: 10, workspace_id: 2, created_by: 3, max_uses: 5, use_count: 0, is_revoked: false, expires_at: null }]]) // código
+      .mockResolvedValueOnce([[{ id: 2, max_seats: 50, is_active: true }]]) // workspace del código
+      .mockResolvedValueOnce([[{ used: 1 }]])             // asientos usados
+      .mockResolvedValueOnce([[]])                        // existing users -> none
       .mockResolvedValueOnce([{ insertId: 1 }])          // INSERT users
       .mockResolvedValueOnce([[]])                       // slug free
       .mockResolvedValueOnce([[]])                       // name free
       .mockResolvedValueOnce([{ insertId: 3 }])          // INSERT own workspace (created_by=1)
       .mockResolvedValueOnce([])                         // INSERT member own workspace
-      .mockResolvedValueOnce([])                         // INSERT IGNORE member invited workspace
+      .mockResolvedValueOnce([])                         // ON CONFLICT member invited workspace
       .mockResolvedValueOnce([])                         // UPDATE invitations use_count
       .mockResolvedValueOnce([]);                        // UPDATE workspace_contacts registered_user_id
     const res = await request(app)
@@ -166,16 +167,42 @@ describe('POST /api/auth/login', () => {
 
   it('should login with valid credentials', async () => {
     const hash = bcrypt.hashSync('correctpassword', 12);
-    pool.query.mockResolvedValueOnce([[{
-      id: 1, username: 'testuser', email: 'test@test.com',
-      password_hash: hash, avatar_url: null,
-    }]]);
+    pool.query
+      .mockResolvedValueOnce([[{
+        id: 1, username: 'testuser', email: 'test@test.com',
+        password_hash: hash, avatar_url: null,
+      }]])                                   // SELECT usuario por email
+      .mockResolvedValueOnce([{ affectedRows: 1 }]) // UPDATE session_epoch
+      .mockResolvedValueOnce([[{ session_epoch: 3 }]]) // SELECT epoch nueva
+      .mockResolvedValueOnce([[{ workspace_id: 9 }]]); // fallback workspace activo
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: 'test@test.com', password: 'correctpassword' });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('token');
     expect(res.body.user).toMatchObject({ id: 1, username: 'testuser' });
+    // El token debe llevar la epoch nueva (sesión única)
+    const payload: any = jwt.decode(res.body.token);
+    expect(payload.epoch).toBe(3);
+  });
+
+  it('should bump session_epoch on login to revoke previous sessions', async () => {
+    const hash = bcrypt.hashSync('correctpassword', 12);
+    pool.query
+      .mockResolvedValueOnce([[{
+        id: 1, username: 'testuser', email: 'test@test.com',
+        password_hash: hash, avatar_url: null,
+      }]])
+      .mockResolvedValueOnce([{ affectedRows: 1 }])
+      .mockResolvedValueOnce([[{ session_epoch: 2 }]])
+      .mockResolvedValueOnce([[]]);
+    await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'test@test.com', password: 'correctpassword' });
+    const updateCall = pool.query.mock.calls.find((c: any[]) =>
+      c[0].includes('session_epoch') && c[0].toUpperCase().includes('UPDATE'));
+    expect(updateCall).toBeTruthy();
+    expect(updateCall[1]).toEqual([1]);
   });
 
   it('should return 401 if email not found', async () => {
@@ -229,12 +256,14 @@ describe('GET /api/auth/me', () => {
   beforeEach(() => { jest.clearAllMocks(); });
 
   it('should return user profile with valid token', async () => {
-    pool.query.mockResolvedValueOnce([[{
-      id: 1, username: 'testuser', email: 'test@test.com',
-      avatar_url: null, is_online: true, last_seen: '2026-01-01T00:00:00Z',
-    }]]);
+    pool.query
+      .mockResolvedValueOnce([[{ session_epoch: 2 }]]) // authenticate: epoch vigente
+      .mockResolvedValueOnce([[{
+        id: 1, username: 'testuser', email: 'test@test.com',
+        avatar_url: null, is_online: true, last_seen: '2026-01-01T00:00:00Z',
+      }]]);
     const token = require('jsonwebtoken').sign(
-      { id: 1, username: 'testuser' }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
+      { id: 1, username: 'testuser', epoch: 2 }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
     );
     const res = await request(app)
       .get('/api/auth/me')
@@ -248,21 +277,35 @@ describe('GET /api/auth/me', () => {
     expect(res.status).toBe(401);
   });
 
-  it('should return 404 if user not found', async () => {
-    pool.query.mockResolvedValueOnce([[]]);
+  it('should return 401 if token has stale epoch (sesión revocada)', async () => {
+    pool.query.mockResolvedValueOnce([[{ session_epoch: 5 }]]);
     const token = require('jsonwebtoken').sign(
-      { id: 999, username: 'ghost' }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
+      { id: 888, username: 'testuser', epoch: 4 }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
     );
     const res = await request(app)
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(401);
+    expect(res.body.error).toContain('Sesión revocada');
   });
 
-  it('should return 500 if DB error on /me', async () => {
-    pool.query.mockRejectedValue(new Error('DB connection failed'));
+  it('should return 404 if user not found', async () => {
+    // authenticate consulta la epoch del usuario inexistente → sin fila → revoca
+    pool.query.mockResolvedValueOnce([[]]);
     const token = require('jsonwebtoken').sign(
-      { id: 1, username: 'test' }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
+      { id: 999, username: 'ghost', epoch: 1 }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
+    );
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('should return 500 if DB error while validating the session', async () => {
+    pool.query.mockRejectedValue(new Error('DB connection failed'));
+    // userId sin entrada en la caché de epoch (la de otros tests ya está poblada)
+    const token = require('jsonwebtoken').sign(
+      { id: 777, username: 'test', epoch: 1 }, process.env.JWT_SECRET || 'secret', { expiresIn: '1h' }
     );
     const res = await request(app)
       .get('/api/auth/me')

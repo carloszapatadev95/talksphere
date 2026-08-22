@@ -4,8 +4,9 @@ import jwt from 'jsonwebtoken';
 import pool from '../db/connection';
 import { loginValidation, registerValidation } from '../middleware/validate';
 import { authLimiter } from '../middleware/rateLimiter';
-import { authenticate, AuthRequest, getJwtSecret } from '../middleware/auth';
+import { authenticate, AuthRequest, getJwtSecret, setSessionEpoch } from '../middleware/auth';
 import { invalidateUserScope } from '../middleware/tenantScope';
+import { getIO } from '../socket';
 import type { components, paths } from '../types/openapi';
 
 type RegisterResponse = paths['/api/auth/register']['post']['responses'][201]['content']['application/json'];
@@ -136,7 +137,7 @@ router.post('/register', authLimiter, registerValidation, async (req: Request, r
         invalidateUserScope(existingUser.id);
 
         const token = jwt.sign(
-          { id: existingUser.id, username: existingUser.username },
+          { id: existingUser.id, username: existingUser.username, epoch: Number(existingUser.session_epoch || 1) },
           getJwtSecret(),
           { expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any }
         );
@@ -241,7 +242,7 @@ router.post('/register', authLimiter, registerValidation, async (req: Request, r
     invalidateUserScope(userId);
 
     const token = jwt.sign(
-      { id: userId, username },
+      { id: userId, username, epoch: 1 },
       getJwtSecret(),
       { expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any }
     );
@@ -289,11 +290,24 @@ router.post('/login', authLimiter, loginValidation, async (req: Request, res: Re
       return;
     }
 
+    // ── Sesión única: invalidar tokens emitidos en logins anteriores ──
+    await pool.query('UPDATE users SET session_epoch = COALESCE(session_epoch, 1) + 1 WHERE id = ?', [user.id]);
+    const [epochRows] = await pool.query('SELECT session_epoch FROM users WHERE id = ?', [user.id]);
+    const epoch = Number((epochRows as any[])[0]?.session_epoch ?? 1);
+    setSessionEpoch(user.id, epoch);
+
     const token = jwt.sign(
-      { id: user.id, username: user.username },
+      { id: user.id, username: user.username, epoch },
       getJwtSecret(),
       { expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any }
     );
+
+    // Cortar sockets abiertos de otros dispositivos con la epoch vieja
+    try {
+      getIO().in(`user:${user.id}`).disconnectSockets(true);
+    } catch {
+      // Socket.io no inicializado (tests) → ignorar
+    }
 
     // Fallback: si el usuario no tiene workspace activo pero pertenece a alguno,
     // usar el primero (para que la app siempre tenga workspace al hacer login).

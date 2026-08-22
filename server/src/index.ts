@@ -26,7 +26,7 @@ import callsRoutes from './routes/calls';
 import tenantsRoutes from './routes/workspaces';
 import invitationsRoutes from './routes/workspaceInvitations';
 import adminUsersRoutes from './routes/adminUsers';
-import { getJwtSecret } from './middleware/auth';
+import { getJwtSecret, getSessionEpoch } from './middleware/auth';
 import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
 import { setupChatHandler } from './socket/chatHandler';
@@ -102,7 +102,7 @@ app.use('/api', pushTestRoutes);
 
 app.use(errorHandler);
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) {
     next(new Error('Token requerido'));
@@ -112,7 +112,14 @@ io.use((socket, next) => {
     const decoded = jwt.verify(token, getJwtSecret()) as {
       id: number;
       username: string;
+      epoch?: number;
     };
+    // Sesión única: rechazar sockets con tokens de logins anteriores
+    const currentEpoch = await getSessionEpoch(decoded.id);
+    if (typeof decoded.epoch !== 'number' || decoded.epoch !== currentEpoch) {
+      next(new Error('Sesión revocada'));
+      return;
+    }
     (socket as any).userId = decoded.id;
     (socket as any).username = decoded.username;
     next();

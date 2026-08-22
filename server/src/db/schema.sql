@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   username      VARCHAR(50) UNIQUE NOT NULL,
   email         VARCHAR(100) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  session_epoch INT NOT NULL DEFAULT 1,
   avatar_url    VARCHAR(255) DEFAULT NULL,
   is_online     BOOLEAN DEFAULT FALSE,
   last_seen     TIMESTAMPTZ,
