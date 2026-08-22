@@ -158,12 +158,17 @@ router.post('/join', authenticate, async (req: AuthRequest, res: Response) => {
       [req.userId, invite.id]
     );
     await pool.query('UPDATE users SET active_workspace_id = ? WHERE id = ?', [invite.workspace_id, req.userId]);
+    // Match-on-join: vincular contactos importados cuyo email coincida con el nuevo miembro.
+    // Solo por email: users no tiene columna phone (los teléfonos viven en workspace_contacts).
     await pool.query(
-      `UPDATE workspace_contacts
+      `UPDATE workspace_contacts wc
        SET registered_user_id = ?
-       WHERE workspace_id = ? AND registered_user_id IS NULL
-         AND (phone IN (SELECT phone FROM users WHERE id = ?) OR email IN (SELECT email FROM users WHERE id = ?))`,
-      [req.userId, invite.workspace_id, req.userId, req.userId]
+       FROM users u
+       WHERE u.id = ?
+         AND wc.workspace_id = ?
+         AND wc.registered_user_id IS NULL
+         AND LOWER(wc.email) = LOWER(u.email)`,
+      [req.userId, req.userId, invite.workspace_id]
     );
     invalidateUserScope(req.userId!);
 
