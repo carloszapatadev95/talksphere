@@ -285,7 +285,8 @@ Historial real de este proyecto (para referencia):
 | `79fec24` | 5 | 1.0.1 | Multi-tenant |
 | `ae1f659` | 5 | 1.1.0 | Alinear versionName (mismo code) |
 | `9edce86` | 6 | 1.1.1 | Multi-tenant release |
-| `df28ced` | 7 | 1.1.2 | Actual (Aug 12 2026) |
+| `df28ced` | 7 | 1.1.2 | Multi-tenant release (Aug 12 2026) |
+| `fe8dd18` | 17 | 1.3.0 | Actualización en Play Store (Aug 21 2026) |
 
 **Dónde se cambia:**
 - `app/app.config.js` → `expo.version` y `expo.android.versionCode`

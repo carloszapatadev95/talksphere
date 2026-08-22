@@ -35,7 +35,7 @@ export default {
   expo: {
     name: APP_NAME,
     slug: 'communicator-app',
-    version: '1.2.8',
+    version: '1.3.0',
     orientation: 'portrait',
     scheme: 'communicator',
     userInterfaceStyle: 'light',
@@ -50,7 +50,7 @@ export default {
     },
     android: {
       package: 'com.chatcallpro.app',
-      versionCode: 16,
+      versionCode: 17,
       adaptiveIcon: {
         backgroundColor: '#E6F4FE',
         foregroundImage: './assets/android-icon-foreground.png',
