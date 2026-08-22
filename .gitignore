@@ -20,3 +20,6 @@ NOTA.md
 
 # Artefactos de build
 *.apk
+
+# Credenciales de firma
+keystore.properties
